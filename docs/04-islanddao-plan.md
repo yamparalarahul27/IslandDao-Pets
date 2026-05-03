@@ -74,33 +74,44 @@ On-demand generation only makes sense if the collection is huge or
 traits are open-ended. IslandDAO perk NFTs are a fixed enumerable set,
 so pre-generation wins.
 
-## Decisions still open
+## Decisions
+
+### Locked
+
+1. **Chain + wallet stack — Solana + Phantom.** Confirmed: collection
+   is on Solana (traded on Tensor). Ownership verification will use a
+   Phantom signed-message flow against the wallet's current holdings of
+   the perk-NFT collection.
+
+### Still open
 
 These drive concrete implementation choices and should be locked before
 coding starts:
-
-1. **Chain + wallet stack.**
-   - Solana → Phantom + signed-message verification.
-   - EVM → SIWE.
-   - Affects the verification stack and the ownership-check service.
-2. **Art fidelity target.**
+1. **Art fidelity target.**
    - Pet *inspired by* NFT traits (looser, easier, looks great in the
      chibi style).
    - Pet that *is* the NFT character restyled (harder; needs strong
      identity-conditioned generator and probably per-NFT LoRA tuning).
-3. **Primary environment.**
+2. **Primary environment.**
    - If Codex is the main target, the upstream pipeline does ~90% of
      the work and we ship fast.
    - If most usage is web / desktop, the 9-row atlas is overkill and
      a simpler 4–6-row sheet would reduce generation cost by ~40%.
-4. **Storage and funding.**
+3. **Storage and funding.**
    - Who pays for generation + hosting? One-time DAO treasury spend,
      or per-claim fee?
    - Where does the catalog live? IPFS, Arweave, or a CDN bucket?
-5. **Collection size and catalog source.**
+4. **Collection size and catalog source.**
    - How many perk NFTs total?
    - Where is the canonical trait metadata (mint addresses, attribute
      JSONs, original artwork URLs)?
+
+A worked example of the trait → `pet_request.json` mapping for one
+sampled NFT (Mint `HnpUn8kCK5dCRHNs7iXtPNuTZsLkzzk7hQfdbHSMKACn`,
+"Lavender Druid Tiger") is in
+[`05-sample-nft-mapping.md`](05-sample-nft-mapping.md). It validates
+that the IslandDAO Perks metadata schema maps cleanly to the hatch-pet
+pipeline with a small, regular field-rename mapper.
 
 ## Suggested MVP scope
 

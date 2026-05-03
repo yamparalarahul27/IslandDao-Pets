@@ -18,6 +18,10 @@ embed on websites, and use across other environments.
 - [`docs/04-islanddao-plan.md`](docs/04-islanddao-plan.md) — Proposed
   architecture for turning each perk NFT into a claimable, ownership-gated
   pet usable in Codex, on websites, and in other environments.
+- [`docs/05-sample-nft-mapping.md`](docs/05-sample-nft-mapping.md) —
+  Worked trait→pet mapping for one sampled IslandDAO Perks NFT
+  ("Lavender Druid Tiger") with a paste-ready Codex prompt and the
+  generalized mapper sketch.
 
 ## Status
 
