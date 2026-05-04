@@ -1,15 +1,15 @@
 import Link from "next/link";
-import { ArrowRight, Sparkles, Wallet, Download } from "lucide-react";
+import { ArrowRight, Sparkles, Wallet, Download, Inbox } from "lucide-react";
 
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { PetCard } from "@/components/PetCard";
-import { MOCK_PETS } from "@/lib/mock";
+import { getRecentPets } from "@/lib/pets";
 
-export default function Home() {
-  const recent = [...MOCK_PETS]
-    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-    .slice(0, 6);
+export const dynamic = "force-dynamic";
+
+export default async function Home() {
+  const recent = await getRecentPets(6);
 
   return (
     <div>
@@ -50,10 +50,7 @@ export default function Home() {
       </section>
 
       {/* Recent grid */}
-      <section
-        id="recent"
-        className="mx-auto w-full max-w-6xl px-6 pb-24"
-      >
+      <section id="recent" className="mx-auto w-full max-w-6xl px-6 pb-24">
         <div className="mb-6 flex items-end justify-between">
           <div>
             <h2 className="text-2xl font-semibold tracking-tight">
@@ -71,11 +68,15 @@ export default function Home() {
           </Link>
         </div>
 
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {recent.map((pet) => (
-            <PetCard key={pet.id} pet={pet} />
-          ))}
-        </div>
+        {recent.length === 0 ? (
+          <EmptyCatalog />
+        ) : (
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {recent.map((pet) => (
+              <PetCard key={pet.id} pet={pet} />
+            ))}
+          </div>
+        )}
       </section>
 
       {/* How it works */}
@@ -102,6 +103,27 @@ export default function Home() {
           />
         </div>
       </section>
+    </div>
+  );
+}
+
+function EmptyCatalog() {
+  return (
+    <div className="rounded-2xl border border-dashed bg-card/40 p-12 text-center">
+      <div className="mx-auto grid size-12 place-items-center rounded-full bg-primary/10 text-primary">
+        <Inbox className="size-5" />
+      </div>
+      <h3 className="mt-4 text-base font-semibold">No Pets yet</h3>
+      <p className="mt-1 text-sm text-muted-foreground">
+        The first IslandDAO Pet is on its way. Check back soon — or request one
+        for your own NFT.
+      </p>
+      <Link
+        href="/request"
+        className={cn(buttonVariants({ size: "sm" }), "mt-5")}
+      >
+        Request a Pet
+      </Link>
     </div>
   );
 }

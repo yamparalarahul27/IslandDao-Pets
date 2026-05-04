@@ -4,13 +4,11 @@ import { ArrowLeft } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { MOCK_PETS, getPet } from "@/lib/mock";
+import { getPet } from "@/lib/pets";
 import { ROW_SPECS } from "@/lib/types";
 import { PetDetailStage, PetDownloadButton } from "./PetDetailClient";
 
-export function generateStaticParams() {
-  return MOCK_PETS.map((p) => ({ id: p.id }));
-}
+export const dynamic = "force-dynamic";
 
 export default async function PetPage({
   params,
@@ -18,7 +16,7 @@ export default async function PetPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const pet = getPet(id);
+  const pet = await getPet(id);
   if (!pet) notFound();
 
   return (

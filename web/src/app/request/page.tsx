@@ -14,6 +14,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent } from "@/components/ui/card";
 import { MOCK_OWNED_NFTS } from "@/lib/mock";
+import { submitPetRequest } from "./actions";
 
 function RequestForm() {
   const sp = useSearchParams();
@@ -34,7 +35,7 @@ function RequestForm() {
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!connected) {
+    if (!connected || !publicKey) {
       setVisible(true);
       return;
     }
@@ -43,9 +44,18 @@ function RequestForm() {
       return;
     }
     setSubmitting(true);
-    // Stub: in production, POST to /api/requests, persist to Supabase.
-    await new Promise((r) => setTimeout(r, 600));
+    const result = await submitPetRequest({
+      wallet: publicKey.toBase58(),
+      nftMint: mint.trim(),
+      nftName: name,
+      notes,
+      email,
+    });
     setSubmitting(false);
+    if (!result.ok) {
+      toast.error("Request failed", { description: result.error });
+      return;
+    }
     toast.success("Request submitted", {
       description: "We'll start crafting your Pet shortly.",
     });

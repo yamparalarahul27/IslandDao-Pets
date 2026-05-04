@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { useWalletModal } from "@solana/wallet-adapter-react-ui";
 import {
@@ -16,7 +16,9 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-import { findPetForNft, MOCK_OWNED_NFTS } from "@/lib/mock";
+import { MOCK_OWNED_NFTS } from "@/lib/mock";
+import type { Pet } from "@/lib/types";
+import { lookupPetsForMints } from "./actions";
 
 export default function MyPetsPage() {
   const { connected, publicKey } = useWallet();
@@ -24,9 +26,37 @@ export default function MyPetsPage() {
 
   const owned = useMemo(() => {
     if (!connected) return [];
-    // In production this would call Helius/Shyft DAS API for the connected wallet.
+    // TODO: replace with Helius DAS getAssetsByOwner once wired.
     return MOCK_OWNED_NFTS;
   }, [connected]);
+
+  const [petByMint, setPetByMint] = useState<Map<string, Pet>>(new Map());
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (owned.length === 0) {
+      setPetByMint(new Map());
+      return;
+    }
+    let cancelled = false;
+    setLoading(true);
+    lookupPetsForMints(owned.map((n) => n.mint))
+      .then((pets) => {
+        if (cancelled) return;
+        const map = new Map<string, Pet>();
+        for (const p of pets) map.set(p.nftMint, p);
+        setPetByMint(map);
+      })
+      .catch((e) => {
+        console.error("[my-pets] lookup failed", e);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [owned]);
 
   if (!connected) {
     return (
@@ -41,19 +71,15 @@ export default function MyPetsPage() {
           We need to peek at your IslandDAO Perks NFTs to match them with Pets.
           Nothing is signed unless you choose to claim.
         </p>
-        <Button
-          size="lg"
-          className="mt-6"
-          onClick={() => setVisible(true)}
-        >
+        <Button size="lg" className="mt-6" onClick={() => setVisible(true)}>
           <Wallet className="size-4" /> Connect wallet
         </Button>
       </div>
     );
   }
 
-  const matched = owned.filter((n) => findPetForNft(n.mint));
-  const unmatched = owned.filter((n) => !findPetForNft(n.mint));
+  const matched = owned.filter((n) => petByMint.has(n.mint));
+  const unmatched = owned.filter((n) => !petByMint.has(n.mint));
 
   return (
     <div className="mx-auto w-full max-w-6xl px-6 py-12">
@@ -63,14 +89,16 @@ export default function MyPetsPage() {
           <p className="mt-1 text-sm text-muted-foreground">
             Connected as{" "}
             <span className="font-mono text-foreground">
-              {publicKey?.toBase58().slice(0, 4)}…{publicKey?.toBase58().slice(-4)}
+              {publicKey?.toBase58().slice(0, 4)}…
+              {publicKey?.toBase58().slice(-4)}
             </span>
-            . Found {owned.length} IslandDAO Perks NFT{owned.length === 1 ? "" : "s"}.
+            . Found {owned.length} IslandDAO Perks NFT
+            {owned.length === 1 ? "" : "s"}.
+            {loading && " Looking up Pets…"}
           </p>
         </div>
       </header>
 
-      {/* Matched */}
       <section>
         <h2 className="mb-4 flex items-center gap-2 text-lg font-semibold">
           <Sparkles className="size-4 text-primary" /> Pets ready to claim
@@ -86,7 +114,7 @@ export default function MyPetsPage() {
         ) : (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {matched.map((nft) => {
-              const pet = findPetForNft(nft.mint)!;
+              const pet = petByMint.get(nft.mint)!;
               return (
                 <Card key={nft.mint} className="overflow-hidden py-0">
                   <div className="relative aspect-square w-full bg-secondary">
@@ -116,10 +144,7 @@ export default function MyPetsPage() {
                     <div className="flex gap-2">
                       <Link
                         href={`/pets/${pet.id}`}
-                        className={cn(
-                          buttonVariants({ size: "sm" }),
-                          "flex-1",
-                        )}
+                        className={cn(buttonVariants({ size: "sm" }), "flex-1")}
                       >
                         <Download className="size-4" /> Download
                       </Link>
@@ -132,7 +157,6 @@ export default function MyPetsPage() {
         )}
       </section>
 
-      {/* Unmatched */}
       <section className="mt-14">
         <h2 className="mb-4 flex items-center gap-2 text-lg font-semibold">
           <PlusCircle className="size-4 text-primary" /> Need a Pet
