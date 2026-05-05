@@ -19,7 +19,7 @@ export function SiteHeader() {
         </Link>
         <nav className="hidden items-center gap-6 text-sm md:flex">
           <Link
-            href="/"
+            href="/discover"
             className="text-muted-foreground transition-colors hover:text-foreground"
           >
             Discover

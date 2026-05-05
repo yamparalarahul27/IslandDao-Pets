@@ -92,6 +92,71 @@ export async function fetchOwnedPerks(wallet: string): Promise<OwnedNft[]> {
   return out;
 }
 
+export type CollectionPerk = {
+  mint: string;
+  name: string;
+  imageUrl: string;
+};
+
+// Helius returns ~2.3 MB for the Perks collection — over Next's fetch
+// cache cap. Use a process-memory TTL cache instead.
+type CachedAllPerks = { ts: number; value: CollectionPerk[] };
+let allPerksCache: CachedAllPerks | null = null;
+const ALL_PERKS_TTL_MS = 60_000;
+
+/**
+ * Fetch every NFT in the IslandDAO Perks collection. Paged Helius DAS
+ * `getAssetsByGroup`. Cached in-process for 60s to keep the discover
+ * page snappy and within the free Helius tier.
+ */
+export async function fetchAllPerks(): Promise<CollectionPerk[]> {
+  const now = Date.now();
+  if (allPerksCache && now - allPerksCache.ts < ALL_PERKS_TTL_MS) {
+    return allPerksCache.value;
+  }
+
+  const url = rpcUrl();
+  const out: CollectionPerk[] = [];
+  const limit = 1000;
+  const maxPages = 5;
+
+  for (let page = 1; page <= maxPages; page++) {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: `group-${page}`,
+        method: "getAssetsByGroup",
+        params: {
+          groupKey: "collection",
+          groupValue: ISLANDDAO_PERKS_COLLECTION_MINT,
+          page,
+          limit,
+        },
+      }),
+      cache: "no-store",
+    });
+    if (!res.ok) {
+      console.error("[perks] helius non-ok:", res.status, await res.text());
+      break;
+    }
+    const json = (await res.json()) as { result?: { items?: DasAsset[] } };
+    const items = json.result?.items ?? [];
+    for (const it of items) {
+      out.push({
+        mint: it.id,
+        name: it.content?.metadata?.name ?? "IslandDAO Perks",
+        imageUrl: pickImage(it),
+      });
+    }
+    if (items.length < limit) break;
+  }
+
+  allPerksCache = { ts: now, value: out };
+  return out;
+}
+
 /**
  * Lightweight ownership check for a single asset — used to gate the
  * download button on the pet detail page.

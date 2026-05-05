@@ -87,13 +87,28 @@ export async function getPetByNftMint(mint: string): Promise<Pet | null> {
 export async function getPetsByMints(mints: string[]): Promise<Pet[]> {
   if (mints.length === 0) return [];
   const supabase = getSupabaseServer();
-  const { data, error } = await supabase
-    .from("pets")
-    .select("*")
-    .in("nft_mint", mints);
-  if (error) {
-    console.error("[pets] getPetsByMints:", error.message);
-    return [];
+
+  // Chunk to keep the URL under Cloudflare's URI size limit. A typical
+  // base58 mint is ~44 chars; 100 fits comfortably under 8KB.
+  const CHUNK = 100;
+  const chunks: string[][] = [];
+  for (let i = 0; i < mints.length; i += CHUNK) {
+    chunks.push(mints.slice(i, i + CHUNK));
   }
-  return (data ?? []).map(rowToPet);
+
+  const results = await Promise.all(
+    chunks.map(async (chunk) => {
+      const { data, error } = await supabase
+        .from("pets")
+        .select("*")
+        .in("nft_mint", chunk);
+      if (error) {
+        console.error("[pets] getPetsByMints chunk:", error.message);
+        return [];
+      }
+      return (data ?? []) as PetRow[];
+    }),
+  );
+
+  return results.flat().map(rowToPet);
 }
