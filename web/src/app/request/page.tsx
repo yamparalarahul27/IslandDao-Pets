@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useWallet } from "@solana/wallet-adapter-react";
@@ -13,7 +13,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent } from "@/components/ui/card";
-import { MOCK_OWNED_NFTS } from "@/lib/mock";
+import type { OwnedNft } from "@/lib/types";
+import { getOwnedPerks } from "@/app/my-pets/actions";
 import { submitPetRequest } from "./actions";
 
 function RequestForm() {
@@ -30,8 +31,25 @@ function RequestForm() {
   const [notes, setNotes] = useState("");
   const [email, setEmail] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [owned, setOwned] = useState<OwnedNft[]>([]);
 
-  const owned = connected ? MOCK_OWNED_NFTS : [];
+  useEffect(() => {
+    if (!connected || !publicKey) {
+      setOwned([]);
+      return;
+    }
+    let cancelled = false;
+    getOwnedPerks(publicKey.toBase58())
+      .then((nfts) => {
+        if (!cancelled) setOwned(nfts);
+      })
+      .catch((e) => {
+        console.error("[request] getOwnedPerks failed", e);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [connected, publicKey]);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();

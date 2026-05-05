@@ -1,15 +1,15 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { useWalletModal } from "@solana/wallet-adapter-react-ui";
-import { Download, Wallet, Lock } from "lucide-react";
+import { Download, Loader2, Lock, Wallet } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { SpritePlayer } from "@/components/SpritePlayer";
 import { ROW_SPECS, type Pet } from "@/lib/types";
-import { MOCK_OWNED_NFTS } from "@/lib/mock";
+import { checkWalletOwnsAsset } from "@/app/my-pets/actions";
 
 type Props = { pet: Pet };
 
@@ -61,15 +61,40 @@ export function PetDownloadButton({ pet }: Props) {
   const { connected, publicKey } = useWallet();
   const { setVisible } = useWalletModal();
 
-  const ownsThisNft = useMemo(() => {
-    if (!connected || !publicKey) return false;
-    return MOCK_OWNED_NFTS.some((n) => n.mint === pet.nftMint);
+  const [ownsThisNft, setOwnsThisNft] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    if (!connected || !publicKey) {
+      setOwnsThisNft(null);
+      return;
+    }
+    let cancelled = false;
+    setOwnsThisNft(null);
+    checkWalletOwnsAsset(publicKey.toBase58(), pet.nftMint)
+      .then((owns) => {
+        if (!cancelled) setOwnsThisNft(owns);
+      })
+      .catch((e) => {
+        console.error("[pet-detail] ownership check failed", e);
+        if (!cancelled) setOwnsThisNft(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [connected, publicKey, pet.nftMint]);
 
   if (!connected) {
     return (
       <Button className="w-full" onClick={() => setVisible(true)}>
         <Wallet className="size-4" /> Connect to download
+      </Button>
+    );
+  }
+
+  if (ownsThisNft === null) {
+    return (
+      <Button className="w-full" variant="secondary" disabled>
+        <Loader2 className="size-4 animate-spin" /> Checking ownership…
       </Button>
     );
   }

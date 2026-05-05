@@ -63,11 +63,12 @@ font, with a light/dark toggle. Real IslandDAO perk artwork lives in
 - **Wallet** — [SolanaWalletProvider](web/src/components/providers/SolanaWalletProvider.tsx) auto-detects every Wallet-Standard wallet (Jupiter, Phantom, Solflare, Backpack…). [ConnectWalletButton](web/src/components/wallet/ConnectWalletButton.tsx) handles connect/disconnect/copy address.
 - **Supabase clients** — [src/lib/supabase/server.ts](web/src/lib/supabase/server.ts) (anon + service-role, both `import "server-only"`-gated) and [src/lib/supabase/browser.ts](web/src/lib/supabase/browser.ts).
 - **Repo layer** — [src/lib/pets.ts](web/src/lib/pets.ts): `getRecentPets`, `getAllPets`, `getPet`, `getPetByNftMint`, `getPetsByMints`.
+- **On-chain ownership** — [src/lib/perks.ts](web/src/lib/perks.ts) holds `ISLANDDAO_PERKS_COLLECTION_MINT = 5XSXoWkcmynUSiwoi7XByRDiV9eomTgZQywgWrpYzKZ8` and two helpers: `fetchOwnedPerks(wallet)` (paged Helius DAS `getAssetsByOwner`, filtered by collection grouping) and `walletOwnsAsset(wallet, mint)` (single-asset check). Exposed to client via server actions in [src/app/my-pets/actions.ts](web/src/app/my-pets/actions.ts): `getOwnedPerks`, `checkWalletOwnsAsset`.
 - **Pages**
   - [`/`](web/src/app/page.tsx) — server component, lists 6 most recent Pets, empty state when DB is empty.
-  - [`/my-pets`](web/src/app/my-pets/page.tsx) — client component; on connect, calls server action `lookupPetsForMints` to find DB matches.
-  - [`/pets/[id]`](web/src/app/pets/[id]/page.tsx) — server component; live SpritePlayer over the 1536×1872 atlas spec; ownership-gated download.
-  - [`/request`](web/src/app/request/page.tsx) — client component; on submit, calls server action `submitPetRequest` (validates wallet/mint/email shape, inserts into `pet_requests` via service role).
+  - [`/my-pets`](web/src/app/my-pets/page.tsx) — on connect, fetches real Perks holdings via Helius, then matches against the DB.
+  - [`/pets/[id]`](web/src/app/pets/[id]/page.tsx) — server component; live SpritePlayer; download button gated by live `walletOwnsAsset` check.
+  - [`/request`](web/src/app/request/page.tsx) — picker shows the wallet's actual Perks; submit inserts into `pet_requests` via service role.
 - **SpritePlayer** — canvas-based animator at [src/components/SpritePlayer.tsx](web/src/components/SpritePlayer.tsx). Honors the 9-row × 8-col atlas (idle 6f, run-right 8f, run-left 8f, waving 4f, jumping 5f, failed 8f, waiting 6f, running 6f, review 6f).
 - **Upload script** — [web/scripts/upload-pet.ts](web/scripts/upload-pet.ts), runnable as `pnpm upload-pet`.
 - **`.env`** — populated locally and gitignored. Three keys: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`.
@@ -78,11 +79,9 @@ font, with a light/dark toggle. Real IslandDAO perk artwork lives in
 
 | Stub | Where | Replace with |
 |---|---|---|
-| **Mocked owned NFTs** | `MOCK_OWNED_NFTS` in [src/lib/mock.ts](web/src/lib/mock.ts), used by [my-pets/page.tsx](web/src/app/my-pets/page.tsx) and [request/page.tsx](web/src/app/request/page.tsx) | Helius DAS `getAssetsByOwner` filtered by IslandDAO Perks collection mint |
-| **Mocked Pets fallback** | `MOCK_PETS` in same file — *not currently rendered* (landing reads from DB) but kept for reference | Delete once a real pet is in the DB and the design is locked |
-| **Wallet ownership check on download** | [PetDetailClient.tsx](web/src/app/pets/[id]/PetDetailClient.tsx) `ownsThisNft` uses `MOCK_OWNED_NFTS` | Same Helius call result |
 | **No "create signed download URL"** | Spritesheets are public-bucket URLs; download is a plain `window.location.href = pet.spritesheetUrl` | Optional: server-side ownership re-check + signed URL if you ever want to gate the file itself, not just the UI |
 | **No install-script / curl-pipe endpoint** | None yet | Lift petdex's [install-script.ts](https://github.com/crafter-station/petdex/blob/main/src/lib/install-script.ts) approach for `/install/[slug]` route |
+| **No `pet.zip` packaging** | `upload-pet` only uploads the two raw files | Optional: also produce + upload `<slug>.zip` for one-click download |
 
 ---
 
@@ -200,86 +199,17 @@ You can then watch the `pet_requests` table in Supabase Studio for new asks.
 
 ---
 
-## Next session — wire Helius DAS for real ownership
+## Next session — pick one
 
-This was the cliff we stopped at. Concrete steps to pick up:
+Helius is wired. Sensible directions, in rough order of value:
 
-1. **Get a free key:** https://dev.helius.xyz/ → sign up → API key. Add to `.env`:
-   ```
-   HELIUS_API_KEY=...
-   ```
-   Don't expose it to the browser (no `NEXT_PUBLIC_` prefix).
-
-2. **Get the IslandDAO Perks collection mint address.** Cheapest path: open any one Perks NFT on Solscan and copy the on-chain Collection address. Save it as a constant in `web/src/lib/perks.ts`:
-   ```ts
-   export const ISLANDDAO_PERKS_COLLECTION_MINT = "...";
-   ```
-
-3. **Write a server action** at `web/src/app/my-pets/owned-nfts.ts`:
-   ```ts
-   "use server";
-   import { ISLANDDAO_PERKS_COLLECTION_MINT } from "@/lib/perks";
-   import type { OwnedNft } from "@/lib/types";
-
-   export async function getOwnedPerks(wallet: string): Promise<OwnedNft[]> {
-     const url = `https://mainnet.helius-rpc.com/?api-key=${process.env.HELIUS_API_KEY}`;
-     const res = await fetch(url, {
-       method: "POST",
-       headers: { "content-type": "application/json" },
-       body: JSON.stringify({
-         jsonrpc: "2.0",
-         id: "1",
-         method: "getAssetsByOwner",
-         params: {
-           ownerAddress: wallet,
-           page: 1,
-           limit: 1000,
-         },
-       }),
-     });
-     const json = await res.json();
-     const items = json?.result?.items ?? [];
-     return items
-       .filter((it: any) =>
-         it.grouping?.some(
-           (g: any) =>
-             g.group_key === "collection" &&
-             g.group_value === ISLANDDAO_PERKS_COLLECTION_MINT,
-         ),
-       )
-       .map((it: any) => ({
-         mint: it.id,
-         name: it.content?.metadata?.name ?? "IslandDAO Perks",
-         imageUrl:
-           it.content?.files?.[0]?.uri ??
-           it.content?.links?.image ??
-           "",
-         collection: "IslandDAO Perks",
-       }));
-   }
-   ```
-
-4. **Swap [my-pets/page.tsx](web/src/app/my-pets/page.tsx) line 25-30:**
-   ```tsx
-   const [owned, setOwned] = useState<OwnedNft[]>([]);
-   useEffect(() => {
-     if (!connected || !publicKey) { setOwned([]); return; }
-     let cancelled = false;
-     getOwnedPerks(publicKey.toBase58())
-       .then((nfts) => { if (!cancelled) setOwned(nfts); })
-       .catch((e) => { console.error(e); });
-     return () => { cancelled = true; };
-   }, [connected, publicKey]);
-   ```
-   Drop the `MOCK_OWNED_NFTS` import.
-
-5. **Same swap in [PetDetailClient.tsx](web/src/app/pets/[id]/PetDetailClient.tsx)** — call `getOwnedPerks(wallet)` once on connect and check `nfts.some(n => n.mint === pet.nftMint)` instead of reading mocks.
-
-6. **Optional: cache** — wrap `getOwnedPerks` with a 30-second LRU keyed by wallet so rapid-fire reloads don't burn quota.
-
-7. **Test against your own wallet** — connect, confirm the real holdings show up, confirm matched/unmatched buckets are correct, claim flow works end-to-end.
-
-8. **Once green: delete `MOCK_OWNED_NFTS`** from [src/lib/mock.ts](web/src/lib/mock.ts). The whole mock module can probably go.
+1. **Upload a real hatched Pet** end-to-end (`pnpm upload-pet …`) and walk through it as the holder of one Perk: connect → see "Pet ready" → claim → download → install in Codex.
+2. **petdex-style install command** — add `/install/[slug]/route.ts` that emits a POSIX/PowerShell installer script; lift logic from petdex's [install-script.ts](https://github.com/crafter-station/petdex/blob/main/src/lib/install-script.ts). Show it as a copy-paste card on the pet detail page.
+3. **CSS sprite player** — replace the canvas [SpritePlayer](web/src/components/SpritePlayer.tsx) with petdex's [pet-sprite.tsx](https://github.com/crafter-station/petdex/blob/main/src/components/pet-sprite.tsx) for SSR-friendly thumbnails and per-row fps from `ROW_SPECS`.
+4. **Admin view at `/admin/requests`** — table of `pet_requests` you can triage, gated by env var `ADMIN_WALLETS` (comma-separated pubkeys).
+5. **`pet.zip` packaging** in `upload-pet` — bundles `spritesheet.webp` + `pet.json` for one-click download.
+6. **30s LRU cache** around `fetchOwnedPerks` keyed by wallet, so rapid reloads don't burn Helius quota.
+7. **Tensor floor / last-sale** on the pet detail sidebar (needs Tensor API key).
 
 ---
 
@@ -295,17 +225,16 @@ This was the cliff we stopped at. Concrete steps to pick up:
 
 ---
 
-## Open questions for next session
-
-1. Do we want to ship a **curl-pipe installer** (`curl -sSf https://.../install/<slug> | sh`) like petdex, or is "download zip" enough for v1?
-2. **Pet ZIP packaging** — should `upload-pet` also produce a `<slug>.zip` containing both files for one-click download? Cheap to add.
-3. **Admin view** — do we want a `/admin/requests` page that lists `pet_requests` for you to triage? Or is the Supabase Studio table view enough?
-4. **Pet detail polish** — petdex auto-cycles through all 9 animation rows in their hero stage. We currently let users click row chips. Cycling is more impressive on first view; keep both?
-5. **Floor price / last sale on detail page** — Tensor API would give this. Worth it, or distraction?
-
----
-
 ## Session history
+
+### 2026-05-05 — Helius DAS integration
+
+- Confirmed IslandDAO Perks collection mint `5XSXoWkcmynUSiwoi7XByRDiV9eomTgZQywgWrpYzKZ8` resolves on Helius DAS as a `MplCoreCollection` ("PERK"), and that `getAssetsByGroup` filtered by collection returns items as expected.
+- Added [src/lib/perks.ts](web/src/lib/perks.ts) with the collection constant and two server-only helpers: paged `fetchOwnedPerks(wallet)` and single-asset `walletOwnsAsset(wallet, mint)`.
+- Exposed both via server actions in [src/app/my-pets/actions.ts](web/src/app/my-pets/actions.ts) (`getOwnedPerks`, `checkWalletOwnsAsset`).
+- Swapped `MOCK_OWNED_NFTS` for live data in `/my-pets`, `/request`, and the pet detail download gate.
+- Deleted [src/lib/mock.ts](web/src/lib/mock.ts) and the temporary probe scripts.
+- TS clean, all routes 200/404, server action verified firing in dev log.
 
 ### 2026-05-04 — initial build + Supabase wiring
 
@@ -319,4 +248,3 @@ This was the cliff we stopped at. Concrete steps to pick up:
 - Wired `submitPetRequest` server action for `/request`.
 - Wired `lookupPetsForMints` server action for `/my-pets`.
 - Wrote `scripts/upload-pet.ts` + `pnpm upload-pet` script.
-- Cliff: ownership lookup is still on `MOCK_OWNED_NFTS`; next step is Helius.

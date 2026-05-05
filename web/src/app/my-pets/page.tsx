@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { useWalletModal } from "@solana/wallet-adapter-react-ui";
 import {
@@ -16,30 +16,50 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-import { MOCK_OWNED_NFTS } from "@/lib/mock";
-import type { Pet } from "@/lib/types";
-import { lookupPetsForMints } from "./actions";
+import type { OwnedNft, Pet } from "@/lib/types";
+import { getOwnedPerks, lookupPetsForMints } from "./actions";
 
 export default function MyPetsPage() {
   const { connected, publicKey } = useWallet();
   const { setVisible } = useWalletModal();
 
-  const owned = useMemo(() => {
-    if (!connected) return [];
-    // TODO: replace with Helius DAS getAssetsByOwner once wired.
-    return MOCK_OWNED_NFTS;
-  }, [connected]);
-
+  const [owned, setOwned] = useState<OwnedNft[]>([]);
+  const [ownedLoading, setOwnedLoading] = useState(false);
   const [petByMint, setPetByMint] = useState<Map<string, Pet>>(new Map());
-  const [loading, setLoading] = useState(false);
+  const [petsLoading, setPetsLoading] = useState(false);
 
+  // Fetch on-chain holdings whenever the connected wallet changes.
+  useEffect(() => {
+    if (!connected || !publicKey) {
+      setOwned([]);
+      setPetByMint(new Map());
+      return;
+    }
+    let cancelled = false;
+    setOwnedLoading(true);
+    getOwnedPerks(publicKey.toBase58())
+      .then((nfts) => {
+        if (!cancelled) setOwned(nfts);
+      })
+      .catch((e) => {
+        console.error("[my-pets] getOwnedPerks failed", e);
+      })
+      .finally(() => {
+        if (!cancelled) setOwnedLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [connected, publicKey]);
+
+  // Look up matching Pets in our DB by mint.
   useEffect(() => {
     if (owned.length === 0) {
       setPetByMint(new Map());
       return;
     }
     let cancelled = false;
-    setLoading(true);
+    setPetsLoading(true);
     lookupPetsForMints(owned.map((n) => n.mint))
       .then((pets) => {
         if (cancelled) return;
@@ -51,12 +71,13 @@ export default function MyPetsPage() {
         console.error("[my-pets] lookup failed", e);
       })
       .finally(() => {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) setPetsLoading(false);
       });
     return () => {
       cancelled = true;
     };
   }, [owned]);
+
 
   if (!connected) {
     return (
@@ -92,9 +113,11 @@ export default function MyPetsPage() {
               {publicKey?.toBase58().slice(0, 4)}…
               {publicKey?.toBase58().slice(-4)}
             </span>
-            . Found {owned.length} IslandDAO Perks NFT
-            {owned.length === 1 ? "" : "s"}.
-            {loading && " Looking up Pets…"}
+            .{" "}
+            {ownedLoading
+              ? "Scanning your wallet…"
+              : `Found ${owned.length} IslandDAO Perks NFT${owned.length === 1 ? "" : "s"}.`}
+            {!ownedLoading && petsLoading && " Looking up Pets…"}
           </p>
         </div>
       </header>
