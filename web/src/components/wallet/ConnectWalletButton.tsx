@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { useWalletModal } from "@solana/wallet-adapter-react-ui";
 import {
-  AlertTriangle,
   Check,
   Copy,
   Loader2,
@@ -47,53 +46,38 @@ export function ConnectWalletButton() {
     );
   }
 
-  // 1. Not connected
-  if (!connected || !publicKey) {
+  // 1. Not yet verified — same look whether the adapter is connected or not.
+  //    Click handler picks the right next step.
+  if (!connected || !publicKey || !isVerified) {
+    const label = connecting
+      ? "Connecting…"
+      : verifying
+        ? "Verifying…"
+        : "Connect Wallet";
+    const onClick = () => {
+      if (!connected) setVisible(true);
+      else verify();
+    };
     return (
       <Button
         size="sm"
-        onClick={() => setVisible(true)}
-        disabled={connecting}
+        onClick={onClick}
+        disabled={connecting || verifying}
         className="min-w-32"
       >
-        <Wallet className="size-4" />
-        {connecting ? "Connecting…" : "Connect Wallet"}
+        {connecting || verifying ? (
+          <Loader2 className="size-4 animate-spin" />
+        ) : (
+          <Wallet className="size-4" />
+        )}
+        {label}
       </Button>
     );
   }
 
   const addr = publicKey.toBase58();
 
-  // 2. Connected, signing in progress
-  if (verifying) {
-    return (
-      <Button
-        size="sm"
-        variant="secondary"
-        disabled
-        className="min-w-32 border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300"
-      >
-        <Loader2 className="size-4 animate-spin" /> Verifying…
-      </Button>
-    );
-  }
-
-  // 3. Connected, NOT verified — clickable amber pill that re-prompts
-  if (!isVerified) {
-    return (
-      <Button
-        size="sm"
-        variant="secondary"
-        onClick={() => verify()}
-        className="min-w-32 border-amber-500/40 bg-amber-500/10 text-amber-700 hover:bg-amber-500/15 dark:text-amber-300"
-      >
-        <AlertTriangle className="size-4" />
-        Verify wallet
-      </Button>
-    );
-  }
-
-  // 4. Connected and verified — normal address dropdown with copy + disconnect
+  // 2. Connected and verified — address dropdown with copy + disconnect.
   const copy = async () => {
     await navigator.clipboard.writeText(addr);
     setCopied(true);
