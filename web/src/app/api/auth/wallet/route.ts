@@ -2,14 +2,14 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 
 import {
-  ADMIN_SESSION_COOKIE,
-  ADMIN_SESSION_TTL_SECONDS,
-  isAdminWallet,
-  isLoginTimestampFresh,
-  parseAdminLoginTimestamp,
+  isVerifyTimestampFresh,
+  mintWalletSession,
+  parseVerifyTimestamp,
+  verifyWalletSession,
   verifyWalletSignature,
-} from "@/lib/admin";
-import { mintAdminSession } from "@/lib/admin-session";
+  WALLET_SESSION_COOKIE,
+  WALLET_SESSION_TTL_SECONDS,
+} from "@/lib/wallet-session";
 
 export const runtime = "nodejs";
 
@@ -20,6 +20,21 @@ type Body = {
   message?: unknown;
   signature?: unknown;
 };
+
+export async function GET() {
+  const store = await cookies();
+  const session = verifyWalletSession(
+    store.get(WALLET_SESSION_COOKIE)?.value,
+  );
+  if (!session) {
+    return NextResponse.json({ verified: false });
+  }
+  return NextResponse.json({
+    verified: true,
+    wallet: session.wallet,
+    expSeconds: session.expSeconds,
+  });
+}
 
 export async function POST(req: Request) {
   let body: Body;
@@ -34,34 +49,31 @@ export async function POST(req: Request) {
   const signature = typeof body.signature === "string" ? body.signature : "";
 
   if (!SOLANA_ADDR.test(wallet)) {
-    return NextResponse.json({ error: "bad_request" }, { status: 400 });
+    return NextResponse.json({ error: "bad_wallet" }, { status: 400 });
   }
-  if (!isAdminWallet(wallet)) {
-    return NextResponse.json({ error: "not_admin" }, { status: 403 });
-  }
-  const ts = parseAdminLoginTimestamp(message);
-  if (!ts || !isLoginTimestampFresh(ts)) {
+  const ts = parseVerifyTimestamp(message);
+  if (!ts || !isVerifyTimestampFresh(ts)) {
     return NextResponse.json({ error: "stale_message" }, { status: 400 });
   }
   if (!verifyWalletSignature(message, signature, wallet)) {
     return NextResponse.json({ error: "bad_signature" }, { status: 401 });
   }
 
-  const { token } = mintAdminSession(wallet);
-  const cookieStore = await cookies();
-  cookieStore.set(ADMIN_SESSION_COOKIE, token, {
+  const { token, expSeconds } = mintWalletSession(wallet);
+  const store = await cookies();
+  store.set(WALLET_SESSION_COOKIE, token, {
     httpOnly: true,
     sameSite: "lax",
     secure: process.env.NODE_ENV === "production",
     path: "/",
-    maxAge: ADMIN_SESSION_TTL_SECONDS,
+    maxAge: WALLET_SESSION_TTL_SECONDS,
   });
 
-  return NextResponse.json({ ok: true, expSeconds: token.split(".")[1] });
+  return NextResponse.json({ ok: true, wallet, expSeconds });
 }
 
 export async function DELETE() {
-  const cookieStore = await cookies();
-  cookieStore.delete(ADMIN_SESSION_COOKIE);
+  const store = await cookies();
+  store.delete(WALLET_SESSION_COOKIE);
   return NextResponse.json({ ok: true });
 }

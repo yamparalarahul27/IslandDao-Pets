@@ -1,8 +1,11 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 
-import { ADMIN_SESSION_COOKIE, isAdminWallet } from "@/lib/admin";
-import { verifyAdminSession } from "@/lib/admin-session";
+import { isAdminWallet } from "@/lib/admin";
+import {
+  verifyWalletSession,
+  WALLET_SESSION_COOKIE,
+} from "@/lib/wallet-session";
 import {
   getSupabaseService,
   SUPABASE_SPRITES_BUCKET,
@@ -22,10 +25,10 @@ type PetJson = {
 };
 
 export async function POST(req: Request) {
-  // 1. Auth: cookie -> session -> wallet -> admin allowlist
+  // 1. Auth: verified wallet session + admin allowlist
   const cookieStore = await cookies();
-  const session = verifyAdminSession(
-    cookieStore.get(ADMIN_SESSION_COOKIE)?.value,
+  const session = verifyWalletSession(
+    cookieStore.get(WALLET_SESSION_COOKIE)?.value,
   );
   if (!session || !isAdminWallet(session.wallet)) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });

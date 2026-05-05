@@ -1,33 +1,12 @@
 "use server";
 
-import { cookies } from "next/headers";
-
-import {
-  ADMIN_SESSION_COOKIE,
-  isAdminWallet as isAdminWalletServer,
-} from "@/lib/admin";
-import { verifyAdminSession } from "@/lib/admin-session";
+import { isAdminWallet } from "@/lib/admin";
 import { fetchAllPerks, type CollectionPerk } from "@/lib/perks";
 
 export async function isCurrentWalletAdmin(
   pubkey: string | null | undefined,
 ): Promise<boolean> {
-  return isAdminWalletServer(pubkey ?? "");
-}
-
-export async function getAdminSessionStatus(): Promise<
-  { signedIn: false } | { signedIn: true; wallet: string; expSeconds: number }
-> {
-  const store = await cookies();
-  const session = verifyAdminSession(store.get(ADMIN_SESSION_COOKIE)?.value);
-  if (!session || !isAdminWalletServer(session.wallet)) {
-    return { signedIn: false };
-  }
-  return {
-    signedIn: true,
-    wallet: session.wallet,
-    expSeconds: session.expSeconds,
-  };
+  return isAdminWallet(pubkey ?? "");
 }
 
 /**

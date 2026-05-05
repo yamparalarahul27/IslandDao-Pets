@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { useWalletModal } from "@solana/wallet-adapter-react-ui";
 import {
+  AlertTriangle,
   ArrowRight,
   CheckCircle2,
   Loader2,
@@ -21,19 +22,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
 import { SpritePlayer } from "@/components/SpritePlayer";
+import { useWalletSession } from "@/components/providers/WalletSessionProvider";
 import { ROW_SPECS } from "@/lib/types";
-import {
-  getAdminSessionStatus,
-  isCurrentWalletAdmin,
-  searchPerks,
-} from "./actions";
-
-type SessionState =
-  | { kind: "loading" }
-  | { kind: "no-wallet" }
-  | { kind: "not-admin"; wallet: string }
-  | { kind: "needs-signin"; wallet: string }
-  | { kind: "signed-in"; wallet: string; expSeconds: number };
+import { isCurrentWalletAdmin, searchPerks } from "./actions";
 
 type SelectedPerk = {
   mint: string;
@@ -47,45 +38,36 @@ type ParsedPetJson = {
   description: string;
 };
 
-const ADMIN_LOGIN_PREFIX = "islanddao-pets:admin-login:";
-
 export default function AdminUploadPage() {
-  const { connected, publicKey, signMessage } = useWallet();
+  const { connected, publicKey } = useWallet();
   const { setVisible } = useWalletModal();
+  const { isVerified, verifying, hydrating, verify, expSeconds } =
+    useWalletSession();
 
-  const [session, setSession] = useState<SessionState>({ kind: "loading" });
+  const [adminCheck, setAdminCheck] = useState<
+    { kind: "loading" } | { kind: "yes" } | { kind: "no"; wallet: string }
+  >({ kind: "loading" });
 
-  // Resolve session state from wallet + server cookie.
+  // Re-check admin allowlist whenever the verified wallet changes.
   useEffect(() => {
-    let cancelled = false;
-    async function run() {
-      if (!connected || !publicKey) {
-        if (!cancelled) setSession({ kind: "no-wallet" });
-        return;
-      }
-      const wallet = publicKey.toBase58();
-      const isAdmin = await isCurrentWalletAdmin(wallet);
-      if (!isAdmin) {
-        if (!cancelled) setSession({ kind: "not-admin", wallet });
-        return;
-      }
-      const status = await getAdminSessionStatus();
-      if (cancelled) return;
-      if (status.signedIn && status.wallet === wallet) {
-        setSession({
-          kind: "signed-in",
-          wallet,
-          expSeconds: status.expSeconds,
-        });
-      } else {
-        setSession({ kind: "needs-signin", wallet });
-      }
+    if (!isVerified || !publicKey) {
+      setAdminCheck({ kind: "loading" });
+      return;
     }
-    run();
+    let cancelled = false;
+    const wallet = publicKey.toBase58();
+    isCurrentWalletAdmin(wallet)
+      .then((ok) => {
+        if (cancelled) return;
+        setAdminCheck(ok ? { kind: "yes" } : { kind: "no", wallet });
+      })
+      .catch(() => {
+        if (!cancelled) setAdminCheck({ kind: "no", wallet });
+      });
     return () => {
       cancelled = true;
     };
-  }, [connected, publicKey]);
+  }, [isVerified, publicKey]);
 
   return (
     <div className="mx-auto w-full max-w-3xl px-6 py-12">
@@ -101,8 +83,9 @@ export default function AdminUploadPage() {
         </p>
       </header>
 
-      {session.kind === "loading" && <SkeletonGate />}
-      {session.kind === "no-wallet" && (
+      {hydrating && <SkeletonGate />}
+
+      {!hydrating && !connected && (
         <Gate
           icon={<Wallet className="size-6" />}
           title="Admin only"
@@ -114,36 +97,57 @@ export default function AdminUploadPage() {
           }
         />
       )}
-      {session.kind === "not-admin" && (
+
+      {!hydrating && connected && !isVerified && (
         <Gate
-          icon={<Lock className="size-6" />}
-          title="Not authorized"
-          body={
-            <>
-              <span className="font-mono text-foreground">
-                {short(session.wallet)}
-              </span>{" "}
-              isn&apos;t an admin wallet.
-            </>
+          icon={<AlertTriangle className="size-6" />}
+          title="Verify your wallet"
+          body="One signature unlocks the admin tools for 24 hours."
+          cta={
+            <Button onClick={() => verify()} disabled={verifying}>
+              {verifying ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <ShieldCheck className="size-4" />
+              )}
+              {verifying ? "Waiting on wallet…" : "Sign to verify"}
+            </Button>
           }
         />
       )}
-      {session.kind === "needs-signin" && (
-        <SignIn
-          wallet={session.wallet}
-          signMessage={signMessage}
-          onDone={(expSeconds) =>
-            setSession({
-              kind: "signed-in",
-              wallet: session.wallet,
-              expSeconds,
-            })
-          }
-        />
+
+      {!hydrating && connected && isVerified && adminCheck.kind === "loading" && (
+        <SkeletonGate />
       )}
-      {session.kind === "signed-in" && (
-        <UploadForm wallet={session.wallet} expSeconds={session.expSeconds} />
-      )}
+
+      {!hydrating &&
+        connected &&
+        isVerified &&
+        adminCheck.kind === "no" && (
+          <Gate
+            icon={<Lock className="size-6" />}
+            title="Not authorized"
+            body={
+              <>
+                <span className="font-mono text-foreground">
+                  {short(adminCheck.wallet)}
+                </span>{" "}
+                isn&apos;t an admin wallet.
+              </>
+            }
+          />
+        )}
+
+      {!hydrating &&
+        connected &&
+        isVerified &&
+        adminCheck.kind === "yes" &&
+        publicKey && (
+          <UploadForm
+            wallet={publicKey.toBase58()}
+            expSeconds={expSeconds ?? 0}
+          />
+        )}
     </div>
   );
 }
@@ -181,80 +185,6 @@ function Gate({
       {cta && <div className="mt-5 flex justify-center">{cta}</div>}
     </div>
   );
-}
-
-function SignIn({
-  wallet,
-  signMessage,
-  onDone,
-}: {
-  wallet: string;
-  signMessage: ReturnType<typeof useWallet>["signMessage"];
-  onDone: (expSeconds: number) => void;
-}) {
-  const [busy, setBusy] = useState(false);
-
-  async function onSign() {
-    if (!signMessage) {
-      toast.error("Wallet doesn't support signMessage");
-      return;
-    }
-    setBusy(true);
-    try {
-      const message = `${ADMIN_LOGIN_PREFIX}${Date.now()}`;
-      const signature = await signMessage(new TextEncoder().encode(message));
-      const signatureBase64 = bytesToBase64(signature);
-      const res = await fetch("/api/admin/session", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ wallet, message, signature: signatureBase64 }),
-      });
-      const data = (await res.json()) as { ok?: boolean; expSeconds?: string; error?: string };
-      if (!res.ok || !data.ok) {
-        toast.error("Sign-in failed", { description: data.error });
-        return;
-      }
-      const expSeconds = Number.parseInt(data.expSeconds ?? "0", 10);
-      toast.success("Signed in for 2 hours");
-      onDone(Number.isFinite(expSeconds) ? expSeconds : 0);
-    } catch (e) {
-      console.error(e);
-      toast.error("Sign request rejected");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <Gate
-      icon={<ShieldCheck className="size-6" />}
-      title="Sign in as admin"
-      body={
-        <>
-          One signature unlocks uploads for 2 hours. Connected as{" "}
-          <span className="font-mono text-foreground">{short(wallet)}</span>.
-        </>
-      }
-      cta={
-        <Button onClick={onSign} disabled={busy}>
-          {busy ? (
-            <Loader2 className="size-4 animate-spin" />
-          ) : (
-            <ShieldCheck className="size-4" />
-          )}
-          {busy ? "Waiting on wallet…" : "Sign message"}
-        </Button>
-      }
-    />
-  );
-}
-
-function bytesToBase64(bytes: Uint8Array): string {
-  let bin = "";
-  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
-  return typeof window === "undefined"
-    ? Buffer.from(bytes).toString("base64")
-    : window.btoa(bin);
 }
 
 function UploadForm({

@@ -4,6 +4,7 @@ import localFont from "next/font/local";
 import "./globals.css";
 
 import { SolanaWalletProvider } from "@/components/providers/SolanaWalletProvider";
+import { WalletSessionProvider } from "@/components/providers/WalletSessionProvider";
 import { ThemeProvider } from "@/components/providers/ThemeProvider";
 import { SiteHeader } from "@/components/SiteHeader";
 import { SiteFooter } from "@/components/SiteFooter";
@@ -71,10 +72,12 @@ export default function RootLayout({
       <body className="min-h-full flex flex-col">
         <ThemeProvider>
           <SolanaWalletProvider>
-            <SiteHeader />
-            <main className="flex-1">{children}</main>
-            <SiteFooter />
-            <Toaster richColors closeButton position="bottom-right" />
+            <WalletSessionProvider>
+              <SiteHeader />
+              <main className="flex-1">{children}</main>
+              <SiteFooter />
+              <Toaster richColors closeButton position="bottom-right" />
+            </WalletSessionProvider>
           </SolanaWalletProvider>
         </ThemeProvider>
       </body>
