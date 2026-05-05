@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ConnectWalletButton } from "@/components/wallet/ConnectWalletButton";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { AdminNavLink } from "@/components/AdminNavLink";
 
 export function SiteHeader() {
   return (
@@ -36,6 +37,7 @@ export function SiteHeader() {
           >
             Request
           </Link>
+          <AdminNavLink />
         </nav>
         <div className="flex items-center gap-2">
           <ThemeToggle />

@@ -10,7 +10,6 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -72,9 +71,9 @@ export function ConnectWalletButton() {
         {shorten(addr)}
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-56">
-        <DropdownMenuLabel className="text-xs text-muted-foreground">
+        <div className="px-1.5 py-1 text-xs font-medium text-muted-foreground">
           {wallet?.adapter.name ?? "Wallet"}
-        </DropdownMenuLabel>
+        </div>
         <DropdownMenuItem onClick={copy}>
           {copied ? (
             <Check className="size-4" />
