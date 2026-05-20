@@ -96,8 +96,7 @@ pnpm dev                   # http://localhost:3000
 ```
 
 `.env` is gitignored; values for this project live in:
-- Supabase Studio → Settings → API
-- Project ref: `bylyujxlvchlziajwzbe.supabase.co`
+- Supabase Studio → Settings → API (project ref kept in the team password manager, not in this repo)
 
 ---
 
